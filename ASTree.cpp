@@ -126,7 +126,11 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
                 && opcode != Pyc::JUMP_IF_TRUE_A
                 && opcode != Pyc::JUMP_IF_TRUE_OR_POP_A
                 && opcode != Pyc::POP_JUMP_IF_TRUE_A
-                && opcode != Pyc::POP_BLOCK) {
+                && opcode != Pyc::POP_BLOCK
+                && opcode != Pyc::POP_JUMP_FORWARD_IF_FALSE_A
+                && opcode != Pyc::POP_JUMP_FORWARD_IF_TRUE_A
+                && opcode != Pyc::POP_JUMP_BACKWARD_IF_FALSE_A
+                && opcode != Pyc::POP_JUMP_BACKWARD_IF_TRUE_A) {
             else_pop = false;
 
             PycRef<ASTBlock> prev = curblock;
@@ -1004,13 +1008,21 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
         case Pyc::JUMP_IF_TRUE_OR_POP_A:
         case Pyc::POP_JUMP_IF_FALSE_A:
         case Pyc::POP_JUMP_IF_TRUE_A:
+        case Pyc::POP_JUMP_FORWARD_IF_FALSE_A:
+        case Pyc::POP_JUMP_FORWARD_IF_TRUE_A:
+        case Pyc::POP_JUMP_BACKWARD_IF_FALSE_A:
+        case Pyc::POP_JUMP_BACKWARD_IF_TRUE_A:
             {
                 PycRef<ASTNode> cond = stack.top();
                 PycRef<ASTCondBlock> ifblk;
                 int popped = ASTCondBlock::UNINITED;
 
                 if (opcode == Pyc::POP_JUMP_IF_FALSE_A
-                        || opcode == Pyc::POP_JUMP_IF_TRUE_A) {
+                        || opcode == Pyc::POP_JUMP_IF_TRUE_A
+                        || opcode == Pyc::POP_JUMP_FORWARD_IF_FALSE_A
+                        || opcode == Pyc::POP_JUMP_FORWARD_IF_TRUE_A
+                        || opcode == Pyc::POP_JUMP_BACKWARD_IF_FALSE_A
+                        || opcode == Pyc::POP_JUMP_BACKWARD_IF_TRUE_A) {
                     /* Pop condition before the jump */
                     stack.pop();
                     popped = ASTCondBlock::PRE_POPPED;
@@ -1029,15 +1041,22 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
                 /* "Jump if true" means "Jump if not false" */
                 bool neg = opcode == Pyc::JUMP_IF_TRUE_A
                         || opcode == Pyc::JUMP_IF_TRUE_OR_POP_A
-                        || opcode == Pyc::POP_JUMP_IF_TRUE_A;
+                        || opcode == Pyc::POP_JUMP_IF_TRUE_A 
+                        || opcode == Pyc::POP_JUMP_FORWARD_IF_TRUE_A
+                        || opcode == Pyc::POP_JUMP_BACKWARD_IF_TRUE_A;
 
                 int offs = operand;
                 if (mod->verCompare(3, 10) >= 0)
                     offs *= sizeof(uint16_t); // // BPO-27129
                 if (opcode == Pyc::JUMP_IF_FALSE_A
-                        || opcode == Pyc::JUMP_IF_TRUE_A) {
+                        || opcode == Pyc::JUMP_IF_TRUE_A
+                        || opcode == Pyc::POP_JUMP_FORWARD_IF_FALSE_A
+                        || opcode == Pyc::POP_JUMP_FORWARD_IF_TRUE_A) {
                     /* Offset is relative in these cases */
                     offs = pos + operand;
+                }
+                else if (opcode == Pyc::POP_JUMP_BACKWARD_IF_FALSE_A || opcode == Pyc::POP_JUMP_BACKWARD_IF_TRUE_A) {
+                    offs = pos - operand;
                 }
 
                 if (cond.type() == ASTNode::NODE_COMPARE
@@ -2362,6 +2381,12 @@ PycRef<ASTNode> BuildFromCode(PycRef<PycCode> code, PycModule* mod)
             break;
         case Pyc::PUSH_NULL:
             stack.push(nullptr);
+            break;
+		case Pyc::RERAISE:
+        case Pyc::RERAISE_A:
+        case Pyc::PUSH_EXC_INFO:
+        case Pyc::WITH_EXCEPT_START:
+            fprintf(stderr, "Unsupported opcode skipped: %s\n", Pyc::OpcodeName(opcode & 0xFF));
             break;
         default:
             fprintf(stderr, "Unsupported opcode: %s\n", Pyc::OpcodeName(opcode & 0xFF));
